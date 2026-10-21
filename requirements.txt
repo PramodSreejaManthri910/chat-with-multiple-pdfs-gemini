@@ -8,6 +8,5 @@ langchain-core
 langchain-text-splitters
 langchain-google-genai
 deepeval
-instructor
 pydantic
 google-genai
