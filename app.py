@@ -1,23 +1,22 @@
 import os
 
-import google.generativeai as genai
 import streamlit as st
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores import FAISS
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.chains.question_answering import load_qa_chain
-from langchain.prompts import PromptTemplate
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
+from langchain_google_genai import (
+    GoogleGenerativeAIEmbeddings,
+    ChatGoogleGenerativeAI,
+)
+from langchain_core.prompts import ChatPromptTemplate
 
 
 # Load environment variables
 load_dotenv()
 
-# Configure Google Gemini API
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 
 def get_pdf_text(pdf_docs):
@@ -31,30 +30,36 @@ def get_pdf_text(pdf_docs):
             page_text = page.extract_text()
 
             if page_text:
-                text += page_text
+                text += page_text + "\n"
 
     return text
 
 
 def get_text_chunks(text):
-    """Split extracted text into overlapping chunks."""
+    """Split extracted PDF text into overlapping chunks."""
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=10000,
-        chunk_overlap=1000
+        chunk_overlap=1000,
     )
 
     return text_splitter.split_text(text)
 
 
-def get_vector_store(text_chunks):
-    """Create FAISS vector embeddings and save them locally."""
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/embedding-001"
+def get_embeddings():
+    """Create the Google Gemini embedding model."""
+    return GoogleGenerativeAIEmbeddings(
+        model="gemini-embedding-001",
+        google_api_key=GOOGLE_API_KEY,
     )
+
+
+def get_vector_store(text_chunks):
+    """Create and save a FAISS vector store."""
+    embeddings = get_embeddings()
 
     vector_store = FAISS.from_texts(
         text_chunks,
-        embedding=embeddings
+        embedding=embeddings,
     )
 
     vector_store.save_local("faiss_index")
@@ -63,100 +68,123 @@ def get_vector_store(text_chunks):
 def get_conversational_chain():
     """Create the Gemini question-answering chain."""
 
-    prompt_template = """
-    Answer the question as detailed as possible from the provided context.
-    Make sure to provide all the details.
+    prompt = ChatPromptTemplate.from_template(
+        """
+        Answer the question using only the provided context.
 
-    If the answer is not available in the provided context, say:
-    "Answer is not available in the context."
+        Provide a detailed and accurate answer based on the context.
+        If the answer is not available in the context, say:
+        "Answer is not available in the provided documents."
 
-    Context:
-    {context}
+        Context:
+        {context}
 
-    Question:
-    {question}
+        Question:
+        {question}
 
-    Answer:
-    """
+        Answer:
+        """
+    )
 
     model = ChatGoogleGenerativeAI(
-        model="gemini-pro",
-        temperature=0.3
+        model="gemini-2.5-flash",
+        temperature=0.3,
+        google_api_key=GOOGLE_API_KEY,
     )
 
-    prompt = PromptTemplate(
-        template=prompt_template,
-        input_variables=["context", "question"]
-    )
-
-    return load_qa_chain(
-        model,
-        chain_type="stuff",
-        prompt=prompt
-    )
+    return prompt | model
 
 
 def user_input(user_question):
-    """Retrieve relevant document chunks and generate an answer."""
+    """Retrieve relevant chunks and generate an answer."""
 
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/embedding-001"
-    )
+    if not os.path.exists("faiss_index"):
+        st.warning("Please upload and process PDF files first.")
+        return
 
-    new_db = FAISS.load_local(
+    embeddings = get_embeddings()
+
+    vector_store = FAISS.load_local(
         "faiss_index",
         embeddings,
-        allow_dangerous_deserialization=True
+        allow_dangerous_deserialization=True,
     )
 
-    docs = new_db.similarity_search(user_question)
+    docs = vector_store.similarity_search(
+        user_question,
+        k=4,
+    )
+
+    context = "\n\n".join(
+        doc.page_content for doc in docs
+    )
 
     chain = get_conversational_chain()
 
-    response = chain(
+    response = chain.invoke(
         {
-            "input_documents": docs,
-            "question": user_question
-        },
-        return_only_outputs=True
+            "context": context,
+            "question": user_question,
+        }
     )
 
-    st.write("Reply:", response["output_text"])
+    st.write("Reply:", response.content)
 
 
 def main():
+    """Run the Streamlit application."""
+
     st.set_page_config(
         page_title="Chat with Multiple PDFs",
-        page_icon="📄"
+        page_icon=" ",
     )
 
-    st.header("Chat with Multiple PDFs using Gemini")
+    st.title(" Chat with Multiple PDFs")
+    st.caption("Powered by Google Gemini, LangChain, and FAISS")
+
+    if not GOOGLE_API_KEY:
+        st.error(
+            "Google API key not found. "
+            "Add GOOGLE_API_KEY to your .env file."
+        )
+        st.stop()
 
     user_question = st.text_input(
-        "Ask a question from the PDF files"
+        "Ask a question about your PDF documents"
     )
 
     if user_question:
         user_input(user_question)
 
     with st.sidebar:
-        st.title("Menu")
+        st.header("Upload Documents")
 
         pdf_docs = st.file_uploader(
-            "Upload your PDF files and click Submit & Process",
+            "Upload one or more PDF files",
+            type=["pdf"],
             accept_multiple_files=True,
-            type=["pdf"]
         )
 
         if st.button("Submit & Process"):
             if not pdf_docs:
                 st.warning("Please upload at least one PDF file.")
+
             else:
-                with st.spinner("Processing..."):
+                with st.spinner("Processing PDF documents..."):
                     raw_text = get_pdf_text(pdf_docs)
-                    text_chunks = get_text_chunks(raw_text)
-                    get_vector_store(text_chunks)
-                    st.success("Processing completed successfully.")
+
+                    if not raw_text.strip():
+                        st.error(
+                            "No readable text was found in the uploaded PDFs."
+                        )
+                    else:
+                        text_chunks = get_text_chunks(raw_text)
+                        get_vector_store(text_chunks)
+
+                        st.success(
+                            "Documents processed successfully. "
+                            "You can now ask questions!"
+                        )
 
 
 if __name__ == "__main__":
