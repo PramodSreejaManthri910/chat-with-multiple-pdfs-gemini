@@ -17,12 +17,12 @@ An AI-powered document question-answering application that allows users to uploa
 ## Tech Stack
 
 - **Python**
-- **Streamlit** – Web application interface
-- **Google Gemini** – Large Language Model for question answering
-- **LangChain** – LLM application and retrieval pipeline
-- **FAISS** – Vector similarity search
+- **Streamlit** – Interactive web application interface
+- **Google Gemini** – LLM for document-based question answering
+- **LangChain** – RAG pipeline and prompt orchestration
+- **FAISS** – Vector storage and similarity search
 - **PyPDF2** – PDF text extraction
-- **Google Generative AI Embeddings** – Semantic text embeddings
+- **Google Generative AI Embeddings** – Semantic document embeddings
 - **DeepEval** – Evaluation of RAG response quality
 
 ## How It Works
