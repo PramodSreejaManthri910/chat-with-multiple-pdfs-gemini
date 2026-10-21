@@ -1,11 +1,13 @@
 streamlit
-google-generativeai
 python-dotenv
-langchain
-langchain-community
-langchain-google-genai
 PyPDF2
 faiss-cpu
+langchain
+langchain-community
+langchain-core
+langchain-text-splitters
+langchain-google-genai
 deepeval
 instructor
 pydantic
+google-genai
