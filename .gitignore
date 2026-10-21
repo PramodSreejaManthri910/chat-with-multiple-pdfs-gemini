@@ -1,0 +1,24 @@
+# Environment variables / API keys
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# FAISS generated vector database
+faiss_index/
+*.faiss
+*.pkl
+
+# DeepEval generated files
+deepeval_telemtry.txt
+.deepeval/
+
+# IDE / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
